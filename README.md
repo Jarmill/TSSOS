@@ -17,7 +17,7 @@ Inf{f(x): x\in R^n}
 ```
 where f is a polynomial with variables x1,...,xn and of degree d.
 
-Taking f=x1^4+x2^4-x1\*x2 as an example, to exetute the first block hierarchy, run
+Taking f=x1^4+x2^4-x1\*x2 as an example, to execute the first block hierarchy, run
 ```Julia
 julia> using TSSOS
 julia> using DynamicPolynomials
@@ -37,7 +37,7 @@ You can use the option method="chordal" which is usually more efficient.
 
 In many cases, the first block hierarchy already obtains the same optimum as the dense Moment-SOS relaxation.
 
-To exetute higher block hierarchies, repeatedly run
+To execute higher block hierarchies, repeatedly run
 
 ```Julia
 julia> opt,sol,data=blockupop_higher!(data)
@@ -54,7 +54,7 @@ K={x\in R^n: g_j(x)>=0, j=1,...,m, g_k(x)=0, k=m+1,...,m+l},
 ```
 for some polynomials g_j, j=1,...,m+l.
 
-Taking f=x1^4+x2^4-x1\*x2 and g_1=2-x1^2-2\*x2^2, g_2=x1^2-x2^2-1 as an example, to exetute the first block hierarchy, run
+Taking f=x1^4+x2^4-x1\*x2 and g_1=2-x1^2-2\*x2^2, g_2=x1^2-x2^2-1 as an example, to execute the first block hierarchy, run
 
 ```Julia
 julia> @polyvar x[1:2]
@@ -70,7 +70,7 @@ You can also use the option method="chordal" which is usually more efficient.
 
 In many cases, the first block hierarchy already obtains the same optimum as the dense Moment-SOS relaxation.
 
-To exetute higher block hierarchies, repeatedly run
+To execute higher block hierarchies, repeatedly run
 
 ```Julia
 julia> opt,sol,data=blockcpop_higher!(data,numeq=1)

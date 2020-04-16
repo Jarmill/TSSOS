@@ -771,7 +771,9 @@ function extract_solutions(n,m,x,d,pop,numeq,opt,basis,blocks,cl,blocksize,Gram;
     if method=="block"
         for i=1:cl
             if blocksize[i]>1
-                nspace=nullspace(Gram[i], atol=1e-4)
+                # nspace=nullspace(Gram[i], atol=1e-4)
+                # "function nullspace does not accept keyword arguments"
+                nspace=nullspace(Gram[i], 1e-4)
                 lns=size(nspace,2)
                 if lns>0
                     for j=1:lns
@@ -807,9 +809,9 @@ function extract_solutions(n,m,x,d,pop,numeq,opt,basis,blocks,cl,blocksize,Gram;
                 G[blocks[i][1],blocks[i][1]]=Gram[i]
             end
         end
-        V=nullspace(G, atol=1e-4)
+        V=nullspace(G,1e-4)
     else
-        V=nullspace(Gram, atol=1e-4)
+        V=nullspace(Gram, 1e-4)
     end
     sol=nothing
     if size(V,2)==1
