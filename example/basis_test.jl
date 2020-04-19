@@ -19,7 +19,9 @@ basis_valid = all.(x-> x<=1, Base.eachcol(basis_bin))
 basis_out = basis[:, basis_valid]
 
 bi = basis_out[:, 6]
-bj = basis_out[:, 37]
+bj = basis_out[:, 38]
 bs = bi + bj
 
 bnew = bin_add(bi, bj, nb)
+
+print(bi, bj, bnew)

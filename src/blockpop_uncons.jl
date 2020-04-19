@@ -1,15 +1,16 @@
 mutable struct data_type
-    n
-    d
-    supp
-    basis
-    coe
-    supp1
-    ub
-    sizes
+    n       #Number of variables
+    d       #degree of relaxation
+    supp    #monomials in f support set
+    basis   #monomial basis to form moment matrix
+    coe     #coefficients of f
+    supp1   # ?
+    ub      #sizes of blocks in TSSOS decomposition
+    sizes   #multiplicity of each block size in decomposition
+    blocks  #monomials corresponding to each block of f
 end
 
-function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false)
+function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false, export_pop="")
     n=length(x)
     mon=monomials(f)
     coe=coefficients(f)
@@ -51,18 +52,18 @@ function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=
     end
     sol=nothing
     if model=="JuMP"
-       opt,supp1,Gram=blockupop(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve,solution=solution)
+       opt,supp1,Gram=blockupop(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve,solution=solution,export_pop=export_pop)
        if solution==true
            sol=extract_solutions(n,0,[],d,[],0,opt,basis,blocks,cl,blocksize,Gram,method=method)
        end
     else
-       opt,supp1=blockupopm(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve)
+       opt,supp1=blockupopm(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve, export_pop=export_pop)
     end
-    data=data_type(n,d,supp,basis,coe,supp1,ub,sizes)
+    data=data_type(n,d,supp,basis,coe,supp1,ub,sizes, blocks)
     return opt,sol,data
 end
 
-function blockupop_higher!(data;method="block",reducebasis=0,QUIET=true,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false)
+function blockupop_higher!(data;method="block",reducebasis=0,QUIET=true,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false,  export_pop="")
     n=data.n
     d=data.d
     supp=data.supp
@@ -94,17 +95,18 @@ function blockupop_higher!(data;method="block",reducebasis=0,QUIET=true,dense=10
     end
     if status==1
         if model=="JuMP"
-           opt,supp1,Gram=blockupop(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve,solution=solution)
+           opt,supp1,Gram=blockupop(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve,solution=solution,  export_pop=export_pop)
            if solution==true
                sol=extract_solutions(n,0,[],d,[],0,opt,basis,blocks,cl,blocksize,Gram,method=method)
            end
         else
-           opt,supp1=blockupopm(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve)
+           opt,supp1=blockupopm(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve, export_pop=export_pop)
         end
     end
     data.supp1=supp1
     data.ub=ub
     data.sizes=sizes
+    data.blocks = blocks
     return opt,sol,data
 end
 
@@ -587,7 +589,7 @@ function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="a
     end
 end
 
-function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,solution=false)
+function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,solution=false,export_pop="")
     lsupp=size(supp,2)
     supp1=zeros(UInt8,n,Int(sum(blocksize.^2+blocksize)/2))
     k=1
@@ -646,6 +648,11 @@ function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,so
         @variable(model, lower)
         @constraint(model, cons[1]+lower==bc[1])
         @objective(model, Max, lower)
+        # if export_pop!=""
+        #     fname = export_pop * ".task.gz";
+        #     println("Writing mosek task file")
+        #     MOI.write_to_file(backend(model), fname)
+        # end
         optimize!(model)
         status=termination_status(model)
         if status == MOI.OPTIMAL
@@ -668,7 +675,7 @@ function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,so
     return objv,supp1,gram
 end
 
-function blockupopm(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true)
+function blockupopm(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,export_pop="")
     lsupp=size(supp,2)
     supp1=zeros(UInt8,n,Int(sum(blocksize.^2+blocksize)/2))
     k=1
@@ -747,6 +754,12 @@ function blockupopm(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true)
                 end
             end
             putobjsense(task,MSK_OBJECTIVE_SENSE_MAXIMIZE)
+            if export_pop != ""
+                #write the task file
+                fname = export_pop * ".task.gz";
+                println("Writing mosek task file")
+                writetask(task, fname)
+            end
             optimize(task)
             solutionsummary(task,MSK_STREAM_MSG)
             solsta=getsolsta(task,MSK_SOL_ITR)

@@ -1,25 +1,26 @@
 mutable struct cdata_type
-    n
-    m
-    x
-    pop
+    n       #number of variables
+    m       #number of constraints
+    x       #variables in optimization
+    pop     #polynomial optimization problem
     ssupp
-    coe
+    coe     #coefficients of polynomials
     lt
-    d
-    dg
-    fbasis
-    gbasis
-    fsupp
-    ub
-    sizes
-    numeq
-    gblocks
-    gcl
-    gblocksize
+    d       #degree of moment matrices (lasserre relaxation)
+    dg      #degree of polynomials
+    fbasis  #monomial basis to form objective polynomial
+    gbasis  #monomial basis to form constraint polynomials
+    fsupp   #support monomials for objective polynomial
+    fblocks #blocks of decomposition for objective
+    ub      #sizes of blocks in TSSOS decomposition
+    sizes   #multiplicity of each block size in decomposition
+    numeq   #number of equality constraints
+    gblocks #blocks of decomposition for constraints
+    gcl     #?
+    gblocksize #size of each block for constraints
 end
 
-function blockcpop_first(pop,x,d;method="block",reducebasis=0,numeq=0,QUIET=false,dense=10,chor_alg="amd",solve=true,solution=false)
+function blockcpop_first(pop,x,d;method="block",reducebasis=0,numeq=0,QUIET=false,dense=10,chor_alg="amd",solve=true,solution=false,export_pop="")
     n=length(x)
     m=length(pop)-1
     dg=zeros(UInt8,1,m)
@@ -99,16 +100,16 @@ function blockcpop_first(pop,x,d;method="block",reducebasis=0,numeq=0,QUIET=fals
               fbasis,flag=reducebasis!(n,tsupp,fbasis,fblocks,fcl,fblocksize)
         end
     end
-    opt,fsupp,Gram=blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,numeq=numeq,QUIET=QUIET,solve=solve,solution=solution)
+    opt,fsupp,Gram=blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,numeq=numeq,QUIET=QUIET,solve=solve,solution=solution,export_pop=export_pop)
     sol=nothing
     if solution==true
         sol=extract_solutions(n,m,x,d,pop,numeq,opt,fbasis,fblocks,fcl,fblocksize,Gram,method=method)
     end
-    data=cdata_type(n,m,x,pop,ssupp,coe,lt,d,dg,fbasis,gbasis,fsupp,ub,sizes,numeq,gblocks,gcl,gblocksize)
+    data=cdata_type(n,m,x,pop,ssupp,coe,lt,d,dg,fbasis,gbasis,fsupp,fblocks,ub,sizes,numeq,gblocks,gcl,gblocksize)
     return opt,sol,data
 end
 
-function blockcpop_higher!(data;method="block",reducebasis=0,QUIET=false,dense=10,chor_alg="amd",solve=true,solution=false)
+function blockcpop_higher!(data;method="block",reducebasis=0,QUIET=false,dense=10,chor_alg="amd",solve=true,solution=false,export_pop="")
     n=data.n
     m=data.m
     x=data.x
@@ -184,13 +185,14 @@ function blockcpop_higher!(data;method="block",reducebasis=0,QUIET=false,dense=1
     end
     sol=nothing
     if status==1
-        opt,fsupp,Gram=blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,numeq=numeq,QUIET=QUIET,solve=solve,solution=solution)
+        opt,fsupp,Gram=blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,numeq=numeq,QUIET=QUIET,solve=solve,solution=solution,export_pop=export_pop)
         if solution==true
             sol=extract_solutions(n,m,x,d,pop,numeq,opt,fbasis,fblocks,fcl,fblocksize,Gram,method=method)
         end
     end
     data.fsupp=fsupp
     data.fbasis=fbasis
+    data.fblocks=fblocks
     data.ub=ub
     data.sizes=sizes
     data.gblocks=gblocks
@@ -1040,7 +1042,7 @@ function get_chcliques!(n,m,ssupp,lt,fbasis,gbasis,fsupp,gblocks,gcl,gblocksize,
     return fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,nub,nsizes,1
 end
 
-function blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks,gcl,gblocksize;numeq=0,QUIET=true,solve=true,solution=false)
+function blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks,gcl,gblocksize;numeq=0,QUIET=true,solve=true,solution=false, export_pop="")
     fsupp=zeros(UInt8,n,Int(sum(fblocksize.^2+fblocksize)/2))
     k=1
     for i=1:fcl
@@ -1153,6 +1155,12 @@ function blockcpop(n,m,ssupp,coe,lt,fbasis,gbasis,fblocks,fcl,fblocksize,gblocks
         @variable(model, lower)
         @constraint(model, cons[1]+lower==bc[1])
         @objective(model, Max, lower)
+        # if export_pop!=""
+        #     fname = export_pop * ".task.gz";
+        #     println("Writing mosek task file")
+        #     # MOI.write_to_file(backend(model), fname)
+        #     JuMP.write_to_file(model, fname)
+        # end
         optimize!(model)
         status=termination_status(model)
         if  status==MOI.OPTIMAL
