@@ -10,6 +10,7 @@ mutable struct data_type
     sizes   #multiplicity of each block size in decomposition
     blocks  #monomials corresponding to each block of f
 end
+#(n,nb,d,supp,basis,coe,supp1,ub,sizes,blocks)
 
 function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false, export_pop="", nb=0)
     n=length(x)
@@ -60,7 +61,7 @@ function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=
     else
        opt,supp1=blockupopm(n,supp,coe,basis,blocks,cl,blocksize,QUIET=QUIET,solve=solve, export_pop=export_pop)
     end
-    data=data_type(n,d,supp,basis,coe,supp1,ub,sizes, blocks)
+    data=data_type(n,nb,d,supp,basis,coe,supp1,ub,sizes,blocks)
     return opt,sol,data
 end
 
@@ -174,9 +175,7 @@ function newton_basis(n,nb,d,supp;e=1e-5)
     temp=sortslices(supp,dims=2)
     while t<=lb
           i=indexb[t]
-          #TODO: replace 2*basis with bin_add
-
-          if bfind(temp,lsupp,2*basis[:,i],n)!=0
+          if bfind(temp,lsupp,bin_add(basis[:,i],basis[:,i],nb),n)!=0
              t=t+1
           else
              model=Model(with_optimizer(Mosek.Optimizer, QUIET=true))
@@ -559,7 +558,6 @@ function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="a
         A=zeros(UInt8,lb,lb)
     end
     if reduce==1
-        #TODO: replace 2*basis with
         supp1=[supp bin_add(basis, basis, nb)]
         supp1=unique(supp1,dims=2)
         supp1=sortslices(supp1,dims=2)
