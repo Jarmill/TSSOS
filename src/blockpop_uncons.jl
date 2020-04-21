@@ -1,5 +1,6 @@
 mutable struct data_type
     n       #Number of variables
+    nb      #Number of binary variables
     d       #degree of relaxation
     supp    #monomials in f support set
     basis   #monomial basis to form moment matrix
@@ -10,7 +11,7 @@ mutable struct data_type
     blocks  #monomials corresponding to each block of f
 end
 
-function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false, export_pop="")
+function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false, export_pop="", nb=0)
     n=length(x)
     mon=monomials(f)
     coe=coefficients(f)
@@ -27,27 +28,27 @@ function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=
           supp=[supp zeros(UInt8,n,1)]
           coe=[coe;0]
        end
-       basis=newton_basis(n,d,supp,e=e)
+       basis=newton_basis(n,nb,d,supp,e=e)
     else
-       basis=get_basis(n,d)
+       basis=get_basis(n,nb,d)
     end
     if method=="block"&&reducebasis==0
-       blocks,cl,blocksize,ub,sizes=get_blocks(n,supp,basis,QUIET=QUIET)
+       blocks,cl,blocksize,ub,sizes=get_blocks(n,supp,basis,QUIET=QUIET,nb=nb)
     elseif method=="block"&&reducebasis==1
         flag=1
         while flag==1
-              blocks,cl,blocksize,ub,sizes=get_blocks(n,supp,basis,reduce=1,QUIET=QUIET)
+              blocks,cl,blocksize,ub,sizes=get_blocks(n,supp,basis,reduce=1,QUIET=QUIET,nb=nb)
               tsupp=[supp zeros(UInt8,n,1)]
               basis,flag=reducebasis!(n,tsupp,basis,blocks,cl,blocksize)
         end
     elseif method=="chordal"&&reducebasis==0
-        blocks,cl,blocksize,ub,sizes=get_cliques(n,supp,basis,dense=dense,QUIET=QUIET,alg=chor_alg)
+        blocks,cl,blocksize,ub,sizes=get_cliques(n,supp,basis,dense=dense,QUIET=QUIET,alg=chor_alg,nb=nb)
     else
         flag=1
         while flag==1
-              blocks,cl,blocksize,ub,sizes=get_cliques(n,supp,basis,reduce=1,QUIET=QUIET,alg=chor_alg)
+              blocks,cl,blocksize,ub,sizes=get_cliques(n,supp,basis,reduce=1,QUIET=QUIET,alg=chor_alg,nb=nb)
               tsupp=[supp zeros(UInt8,n,1)]
-              basis,flag=reducebasis!(n,tsupp,basis,blocks,cl,blocksize)
+              basis,flag=reducebasis!(n,tsupp,basis,blocks,cl,blocksize,nb=nb)
         end
     end
     sol=nothing
@@ -75,11 +76,11 @@ function blockupop_higher!(data;method="block",reducebasis=0,QUIET=true,dense=10
     opt=nothing
     sol=nothing
     if method=="block"&&reducebasis==0
-        blocks,cl,blocksize,ub,sizes,status=get_hblocks(n,supp1,basis,ub,sizes,QUIET=QUIET)
+        blocks,cl,blocksize,ub,sizes,status=get_hblocks(n,supp1,basis,ub,sizes,QUIET=QUIET,nb=nb)
     elseif method=="block"&&reducebasis==1
         flag=1
         while flag==1
-              blocks,cl,blocksize,ub,sizes,status=get_hblocks(n,supp1,basis,ub,sizes,redcue=1,QUIET=QUIET)
+              blocks,cl,blocksize,ub,sizes,status=get_hblocks(n,supp1,basis,ub,sizes,redcue=1,QUIET=QUIET,nb=nb)
               tsupp=[supp zeros(UInt8,n,1)]
               basis,flag=reducebasis!(n,tsupp,basis,blocks,cl,blocksize)
         end
@@ -110,7 +111,18 @@ function blockupop_higher!(data;method="block",reducebasis=0,QUIET=true,dense=10
     return opt,sol,data
 end
 
-function get_basis(n,d)
+function bin_add(bi, bj, n_binary)
+    "multiply two monomials together, where the first n_binary variables are binary"
+    bs = bi + bj
+    bs[1:n_binary, :] = any.(x->x>0, bs[1:n_binary, :])
+    return bs
+end
+
+function get_basis(n,nb,d)
+    #Basis of all monomials in n variables up to degree d
+    #the first nb variables are binary (if any), values {0,1}
+
+
     lb=binomial(n+d,d)
     basis=zeros(UInt8,n,lb)
     i=0
@@ -140,19 +152,30 @@ function get_basis(n,d)
              end
         end
     end
-    return basis
+
+    #inelegantly handle the binary variables
+    basis_bin = basis[1:nb, :]
+
+    basis_valid = all.(x-> x<=1, Base.eachcol(basis_bin))
+    basis_out = basis[:, basis_valid]
+
+    return basis_out
 end
 
-function newton_basis(n,d,supp;e=1e-5)
+function newton_basis(n,nb,d,supp;e=1e-5)
     lsupp=size(supp,2)
-    lb=binomial(n+d,d)
-    basis=get_basis(n,d)
+
+    basis=get_basis(n,nb,d)
+    # lb=binomial(n+d,d)
+    lb = size(basis)[2] #requires some combinatorics later to figure out number of monomials.
     A0=[-1/2*supp' ones(lsupp,1)]
     t=1
     indexb=[i for i=1:lb]
     temp=sortslices(supp,dims=2)
     while t<=lb
           i=indexb[t]
+          #TODO: replace 2*basis with bin_add
+
           if bfind(temp,lsupp,2*basis[:,i],n)!=0
              t=t+1
           else
@@ -372,17 +395,17 @@ function cliquesFromSpMatD(A;dense=10)
     return blocks,cl,blocksize
 end
 
-function get_blocks(n,supp,basis;reduce=0,QUIET=QUIET)
+function get_blocks(n,supp,basis;reduce=0,QUIET=QUIET, nb=0)
     lb=size(basis,2)
     G=SimpleGraph(lb)
     if reduce==1
-        supp1=[supp 2*basis]
+        supp1=[supp bin_add(basis, basis, nb)]
         supp1=unique(supp1,dims=2)
         supp1=sortslices(supp1,dims=2)
         lsupp1=size(supp1,2)
         for i = 1:lb
             for j = i:lb
-                 bi=basis[:,i]+basis[:,j]
+                 bi=bin_add(basis[:,i],basis[:,j],nb)
                  if bfind(supp1,lsupp1,bi,n)!=0
                     add_edge!(G,i,j)
                  end
@@ -394,7 +417,7 @@ function get_blocks(n,supp,basis;reduce=0,QUIET=QUIET)
         lo=size(osupp,2)
         for i = 1:lb
             for j = i:lb
-                bi=basis[:,i]+basis[:,j]
+                bi=bin_add(basis[:,i],basis[:,j], nb)
                 if sum(Int[iseven(bi[k]) for k=1:n])==n||bfind(osupp,lo,bi,n)!=0
                    add_edge!(G,i,j)
                 end
@@ -415,17 +438,17 @@ function get_blocks(n,supp,basis;reduce=0,QUIET=QUIET)
     return blocks,cl,blocksize,ub,sizes
 end
 
-function get_hblocks(n,supp,basis,ub,sizes;reduce=0,QUIET=QUIET)
+function get_hblocks(n,supp,basis,ub,sizes;reduce=0,QUIET=QUIET, nb=0)
     lb=size(basis,2)
     G=SimpleGraph(lb)
     if reduce==1
-        supp1=[supp 2*basis]
+        supp1=[supp bin_add(basis, basis, nb)]
         supp1=unique(supp1,dims=2)
         supp1=sortslices(supp1,dims=2)
         lsupp1=size(supp1,2)
         for i = 1:lb
             for j = i:lb
-                bi=basis[:,i]+basis[:,j]
+                bi=bin_add(basis[:,i],basis[:,j],nb)
                 if bfind(supp1,lsupp1,bi,n)!=0
                    add_edge!(G,i,j)
                 end
@@ -436,7 +459,7 @@ function get_hblocks(n,supp,basis,ub,sizes;reduce=0,QUIET=QUIET)
         lo=size(osupp,2)
         for i = 1:lb
             for j = i:lb
-                bi=basis[:,i]+basis[:,j]
+                bi=bin_add(basis[:,i],basis[:,j],nb)
                 if sum(Int[iseven(bi[k]) for k=1:n])==n||bfind(osupp,lo,bi,n)!=0
                    add_edge!(G,i,j)
                 end
@@ -464,7 +487,7 @@ function get_hblocks(n,supp,basis,ub,sizes;reduce=0,QUIET=QUIET)
     end
 end
 
-function get_cliques(n,supp,basis;reduce=0,dense=10,QUIET=QUIET,alg="amd")
+function get_cliques(n,supp,basis;reduce=0,dense=10,QUIET=QUIET,alg="amd",nb=0)
     lb=size(basis,2)
     if alg=="greedy"
         G=CGraph()
@@ -475,19 +498,20 @@ function get_cliques(n,supp,basis;reduce=0,dense=10,QUIET=QUIET,alg="amd")
         A=zeros(UInt8,lb,lb)
     end
     if reduce==1
-        supp1=[supp 2*basis]
+        supp1=[supp bin_add(basis, basis, nb)]
         supp1=unique(supp1,dims=2)
         supp1=sortslices(supp1,dims=2)
         lsupp1=size(supp1,2)
         for i = 1:lb
             for j = i+1:lb
-                bi=basis[:,i]+basis[:,j]
-                 if bfind(supp1,lsupp1,bi,n)!=0
-                     if alg=="greedy"
-                         cadd_edge!(G,i,j)
-                     else
-                         A[i,j]=1
-                         A[j,i]=1
+                # bi=basis[:,i]+basis[:,j]
+                bi = bin_add(basis[:, i], basis[:, j], nb)
+                if bfind(supp1,lsupp1,bi,n)!=0
+                    if alg=="greedy"
+                        cadd_edge!(G,i,j)
+                    else
+                        A[i,j]=1
+                        A[j,i]=1
                      end
                 end
             end
@@ -498,7 +522,8 @@ function get_cliques(n,supp,basis;reduce=0,dense=10,QUIET=QUIET,alg="amd")
         lo=size(osupp,2)
         for i = 1:lb
             for j = i+1:lb
-                bi=basis[:,i]+basis[:,j]
+                # bi=basis[:,i]+basis[:,j]
+                bi = bin_add(basis[:, i], basis[:, j], nb)
                 if sum(Int[iseven(bi[k]) for k=1:n])==n||bfind(osupp,lo,bi,n)!=0
                     if alg=="greedy"
                         cadd_edge!(G,i,j)
@@ -523,7 +548,7 @@ function get_cliques(n,supp,basis;reduce=0,dense=10,QUIET=QUIET,alg="amd")
     return blocks,cl,blocksize,ub,sizes
 end
 
-function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="amd")
+function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="amd", nb=0)
     lb=size(basis,2)
     if alg=="greedy"
         G=CGraph()
@@ -534,13 +559,15 @@ function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="a
         A=zeros(UInt8,lb,lb)
     end
     if reduce==1
-        supp1=[supp 2*basis]
+        #TODO: replace 2*basis with
+        supp1=[supp bin_add(basis, basis, nb)]
         supp1=unique(supp1,dims=2)
         supp1=sortslices(supp1,dims=2)
         lsupp1=size(supp1,2)
         for i = 1:lb
             for j = i+1:lb
-                bi=basis[:,i]+basis[:,j]
+                # bi=basis[:,i]+basis[:,j]
+                bi = bin_add(basis[:, i], basis[:, j], nb)
                  if bfind(supp1,lsupp1,bi,n)!=0
                      if alg=="greedy"
                          cadd_edge!(G,i,j)
@@ -557,7 +584,7 @@ function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="a
         lo=size(osupp,2)
         for i = 1:lb
             for j = i+1:lb
-                bi=basis[:,i]+basis[:,j]
+                bi=bin_add(basis[:,i],basis[:,j])
                 if sum(Int[iseven(bi[k]) for k=1:n])==n||bfind(osupp,lo,bi,n)!=0
                     if alg=="greedy"
                         cadd_edge!(G,i,j)
@@ -589,14 +616,14 @@ function get_hcliques(n,supp,basis,ub,sizes;reduce=0,dense=10,QUIET=QUIET,alg="a
     end
 end
 
-function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,solution=false,export_pop="")
+function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,solution=false,export_pop="",nb=0)
     lsupp=size(supp,2)
     supp1=zeros(UInt8,n,Int(sum(blocksize.^2+blocksize)/2))
     k=1
     for i=1:cl
         for j=1:blocksize[i]
             for r=j:blocksize[i]
-                @inbounds bi=basis[:,blocks[i][j]]+basis[:,blocks[i][r]]
+                @inbounds bi=bin_add(basis[:,blocks[i][j]],basis[:,blocks[i][r]],nb)
                 @inbounds supp1[:,k]=bi
                 k+=1
             end
@@ -623,7 +650,7 @@ function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,so
                @inbounds pos[i]=@variable(model, [1:bs, 1:bs], PSD)
                for j=1:blocksize[i]
                    for r=j:blocksize[i]
-                       @inbounds bi=basis[:,blocks[i][j]]+basis[:,blocks[i][r]]
+                       @inbounds bi=bin_add(basis[:,blocks[i][j]],basis[:,blocks[i][r]],nb)
                        Locb=bfind(supp1,lsupp1,bi,n)
                        if j==r
                            @inbounds cons[Locb]+=pos[i][j,r]
@@ -675,14 +702,14 @@ function blockupop(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,solve=true,so
     return objv,supp1,gram
 end
 
-function blockupopm(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,export_pop="")
+function blockupopm(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,export_pop="", nb=0)
     lsupp=size(supp,2)
     supp1=zeros(UInt8,n,Int(sum(blocksize.^2+blocksize)/2))
     k=1
     for i=1:cl
         for j=1:blocksize[i]
             for r=j:blocksize[i]
-                @inbounds bi=basis[:,blocks[i][j]]+basis[:,blocks[i][r]]
+                @inbounds bi=bin_add(basis[:,blocks[i][j]],basis[:,blocks[i][r]],nb)
                 @inbounds supp1[:,k]=bi
                 k+=1
             end
@@ -729,7 +756,7 @@ function blockupopm(n,supp,coe,basis,blocks,cl,blocksize;QUIET=true,export_pop="
         end
         oLocb=zeros(UInt32,lone,1)[1:end]
         for i=1:lone
-            bi=2*basis[:,oblocks[i][1]]
+            bi=bin_add(basis[:,oblocks[i][1]],basis[:,oblocks[i][1]],nb)
             oLocb[i]=bfind(supp1,lsupp1,bi,n)
         end
         A=sparse(oLocb,[i for i=1:lone],[1.0 for i=1:lone])
