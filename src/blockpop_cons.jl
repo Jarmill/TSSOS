@@ -44,10 +44,10 @@ function blockcpop_first(pop,x,d;method="block",reducebasis=0,numeq=0,QUIET=fals
         supp=[supp ssupp[i]]
     end
     supp=unique(supp,dims=2)
-    fbasis=get_basis(n,d)
+    fbasis=get_basis(n,0,d)
     gbasis=Vector{Array{UInt8,2}}(undef,m)
     for k=1:m
-        gbasis[k]=get_basis(n,d-Int(ceil(dg[k]/2)))
+        gbasis[k]=get_basis(n,0,d-Int(ceil(dg[k]/2)))
     end
     if method=="block"&&reducebasis==0
        fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,ub,sizes=get_cblocks(n,m,supp,ssupp,lt,fbasis,gbasis,QUIET=QUIET)
@@ -132,7 +132,7 @@ function blockcpop_higher!(data;method="block",reducebasis=0,QUIET=false,dense=1
        fbasis=data.fbasis
        fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,ub,sizes,status=get_chblocks!(n,m,ssupp,lt,fbasis,gbasis,fsupp,gblocks,gcl,gblocksize,ub,sizes,QUIET=QUIET)
     elseif method=="block"&&reducebasis==1
-        fbasis=get_basis(n,d)
+        fbasis=get_basis(n,0,d)
         flag=1
         while flag==1
               fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,ub,sizes,status=get_chblocks!(n,m,ssupp,lt,fbasis,gbasis,fsupp,gblocks,gcl,gblocksize,ub,sizes,reduce=1,QUIET=QUIET)
@@ -159,7 +159,7 @@ function blockcpop_higher!(data;method="block",reducebasis=0,QUIET=false,dense=1
         fbasis=data.fbasis
         fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,ub,sizes,status=get_chcliques!(n,m,ssupp,lt,fbasis,gbasis,fsupp,gblocks,gcl,gblocksize,ub,sizes,dense=dense,QUIET=QUIET,alg=chor_alg)
     else
-        fbasis=get_basis(n,d)
+        fbasis=get_basis(n,0,d)
         flag=1
         while flag==1
               fblocks,fcl,fblocksize,gblocks,gcl,gblocksize,ub,sizes,status=get_chcliques!(n,m,ssupp,lt,fbasis,gbasis,fsupp,gblocks,gcl,gblocksize,ub,sizes,reduce=1,dense=dense,QUIET=QUIET,alg=chor_alg)

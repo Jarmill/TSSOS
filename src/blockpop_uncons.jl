@@ -12,7 +12,7 @@ mutable struct data_type
 end
 #(n,nb,d,supp,basis,coe,supp1,ub,sizes,blocks)
 
-function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false, export_pop="", nb=0)
+function blockupop_first(f,x;d=0,newton=1,method="block",reducebasis=0,e=1e-5,QUIET=false,dense=10,model="JuMP",chor_alg="amd",solve=true,solution=false, export_pop="", nb=0)
     n=length(x)
     mon=monomials(f)
     coe=coefficients(f)
@@ -23,7 +23,9 @@ function blockupop_first(f,x;newton=1,method="block",reducebasis=0,e=1e-5,QUIET=
             @inbounds supp[j,i]=MultivariatePolynomials.degree(mon[i],x[j])
         end
     end
-    d=Int(maxdegree(f)/2)
+    if d == 0
+        d=Int(maxdegree(f)/2)
+    end
     if newton==1
        if sum(supp[:,end])!=0
           supp=[supp zeros(UInt8,n,1)]
@@ -808,6 +810,7 @@ function extract_solutions(n,m,x,d,pop,numeq,opt,basis,blocks,cl,blocksize,Gram;
     remove=UInt16[]
     if method=="block"
         for i=1:cl
+            #GramSmall = all(any.(x->abs(x)<=1e-6, Gram[i]))
             if blocksize[i]>1
                 # nspace=nullspace(Gram[i], atol=1e-4)
                 # "function nullspace does not accept keyword arguments"
@@ -836,7 +839,8 @@ function extract_solutions(n,m,x,d,pop,numeq,opt,basis,blocks,cl,blocksize,Gram;
             end
         end
     elseif method=="chordal"
-        G=zeros(lb,lb)
+        # G=zeros(lb,lb)
+        G = sparse([],[],[],lb,lb)
         for i=1:cl
             if blocksize[i]>1
                 G[blocks[i],blocks[i]]=Gram[i]
@@ -847,6 +851,7 @@ function extract_solutions(n,m,x,d,pop,numeq,opt,basis,blocks,cl,blocksize,Gram;
                 G[blocks[i][1],blocks[i][1]]=Gram[i]
             end
         end
+        save("circle_G_dump.jld", "G", G)
         V=nullspace(G,1e-4)
     else
         V=nullspace(Gram, 1e-4)
